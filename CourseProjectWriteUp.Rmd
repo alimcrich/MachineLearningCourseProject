@@ -1,0 +1,99 @@
+---
+title: "Machine Learning Course project"
+author: "Ali Richomme"
+date: "30/03/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+The aim of this project is to create a machine learning predictor which will predict whether or not an activity was done correctly given data from activity monitors.
+
+## Loading the Data
+```{r}
+library(caret)
+library(ggplot2)
+library(randomForest)
+
+#read in training and testing data
+setwd('/Users/Ali/Documents/Data Science Coursera/R/MachineLearningCourseProject')
+train <- read.csv("pml-training.csv", na.strings=c("NA","#DIV/0!",""))
+test <- read.csv("pml-testing.csv", na.strings=c("NA","#DIV/0!",""))
+
+summary(train$classe)
+```
+The data is now loaded and needs to be split into training, test and validation partitions. I have set aside 30% of the test data for cross validation. 
+```{r}
+val <- createDataPartition(y=train$classe, p=0.7, list=FALSE)
+train_new <- train[val, ]
+test_new <- train[-val, ]
+dim(train_new)
+```
+
+## Feature Selection
+Variables with near zero variance, mostly missing data will be removed so that only useful variables will be included in the model. 
+```{r}
+#first we will remove variables with mostly NAs (use threshold of >70%)
+train_noNA <- train_new
+for (i in 1:length(train_new)) {
+  if (sum(is.na(train_new[ , i])) / nrow(train_new) >= .7) {
+    for (j in 1:length(train_noNA)) {
+      if (length(grep(names(train_new[i]), names(train_noNA)[j]))==1) {
+        train_noNA <- train_noNA[ , -j]
+      }
+    }
+  }
+}
+
+dim(train_noNA)
+```
+Variables such as user and timestamp are not used as predictors and variables with near zero variance are removed.
+```{r}
+train_features <- train_noNA[,8:length(train_noNA)]
+near_zero <- nearZeroVar(train_features, saveMetrics = TRUE)
+
+train_features_keep <- names(train_features)
+```
+
+## The model
+A random forests classifier is used to classify as this tends to be more accurate as a standalone model. 
+```{r}
+set.seed(223)
+
+modFit <- randomForest(classe~., data = train_features)
+print(modFit)
+```
+Cross validation is then completed and the out of sample error is calculated
+```{r}
+predictions <- predict(modFit, test_new, type = "class")
+confusionMatrix(test_new$classe, predictions)
+```
+The in sample error is then calculated
+```{r}
+#in sample error
+predict_train <- predict(modFit, train_new, type = "class")
+confusionMatrix(train_new$classe, predict_train)
+```
+As we can see, an accuracy of 99.6% is acheived when the model is run with cross validation which we can assume is the out of sample error, with the training data, the model achieves an accuracy of 100% which we can say is the in sample error. 
+
+The model is then used to predict the classes of the test data.
+```{r}
+predict_FINAL <- predict(modFit, test, type = "class")
+print(predict_FINAL)
+```
+
+```{r}
+pml_write_files = function(x) {
+  n = length(x)
+  for (i in 1:n) {
+    filename = paste0("problem_id_", i, ".txt")
+    write.table(x[i], file=filename, quote=FALSE,row.names=FALSE, col.names=FALSE)
+  }
+}
+
+pml_write_files(predict_FINAL)
+```
